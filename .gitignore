@@ -1,0 +1,35 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.exe
+
+# Compiled binaries
+ft_chipinfo
+ft_eeprom_check
+ft_eeprom_write_serial
+examples/**/read
+examples/**/write
+examples/**/readua
+examples/**/writeua
+examples/**/sizeua
+examples/**/ftx_eeprom_read
+examples/**/*.bin
+
+# Original tarball
+*.tgz
+*.tar.gz
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
