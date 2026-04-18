@@ -14,6 +14,7 @@ TTY_DEVICE="${TTY_DEVICE:-/dev/ttyUSB0}"
 MAX_SERIAL_LEN=16
 UNLOADED_USB_SERIAL=0
 UNLOADED_FTDI_SIO=0
+UNLOADED_USB_SERIAL_CLIENTS=()
 
 usage() {
   echo "Usage: sudo $0 <new_serial>"
@@ -241,6 +242,40 @@ is_module_loaded() {
   lsmod | grep -i "^${module_name}[[:space:]]"
 }
 
+unload_usbserial_client_modules() {
+  # These drivers commonly depend on usbserial and can block rmmod usbserial.
+  local -a candidates=(pl2303 cp210x ch341 f81534 ftdi_sio)
+  local mod
+  for mod in "${candidates[@]}"; do
+    if [[ "${mod}" == "ftdi_sio" ]]; then
+      # ftdi_sio is handled separately for clearer logs and state tracking.
+      continue
+    fi
+    if is_module_loaded "${mod}" >/dev/null; then
+      if rmmod "${mod}"; then
+        UNLOADED_USB_SERIAL_CLIENTS+=("${mod}")
+        echo "Unloaded usbserial client: ${mod}"
+      else
+        echo "Warning: failed to unload usbserial client: ${mod}"
+      fi
+    fi
+  done
+}
+
+reload_usbserial_client_modules() {
+  local mod
+  if (( ${#UNLOADED_USB_SERIAL_CLIENTS[@]} == 0 )); then
+    return 0
+  fi
+  for mod in "${UNLOADED_USB_SERIAL_CLIENTS[@]}"; do
+    if modprobe "${mod}"; then
+      echo "Loaded usbserial client: ${mod}"
+    else
+      echo "Warning: failed to load usbserial client: ${mod}"
+    fi
+  done
+}
+
 unload_serial_modules() {
   echo "[4/7] Unloading kernel drivers (rmmod)"
   if is_module_loaded "ftdi_sio"; then
@@ -250,6 +285,8 @@ unload_serial_modules() {
   else
     echo "Skip: ftdi_sio not loaded"
   fi
+
+  unload_usbserial_client_modules
 
   if is_module_loaded "usbserial"; then
     rmmod usbserial
@@ -271,6 +308,8 @@ reload_serial_modules() {
   else
     echo "Skip: usbserial was not unloaded by this script"
   fi
+
+  reload_usbserial_client_modules
 
   if (( UNLOADED_FTDI_SIO == 1 )); then
     if modprobe ftdi_sio; then
