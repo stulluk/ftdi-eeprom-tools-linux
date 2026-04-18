@@ -47,25 +47,79 @@ A newly added utility program:
 
 ## Requirements
 
-- Linux (x86_64)
-- GCC compiler
-- libftd2xx library (included in this repository)
+- Linux on **x86_64** (amd64). The scripts and examples here are used on 64-bit PCs.
+- GCC
+- **FTDI D2XX** user-space library **`libftd2xx.so`** installed on the system (see below). This is **not** the same as Debian/Ubuntu `libftdi-dev` (open-source libFTDI).
 - Root privileges (for EEPROM writing)
+
+The Git repository ships **FTDI headers and modified example/tool source**. FTDI’s **prebuilt `libftd2xx.so` binary** is normally **not** committed here; you install it from FTDI’s official Linux D2XX package.
 
 ## Installation and Build
 
-### 1. Library Installation
+### 1. Where `libftd2xx.so` comes from (official FTDI D2XX for Linux)
 
-Install the libftd2xx library on your system:
+All **Linux** `.tgz` builds of **libftd2xx** (x86 32-bit, x86 64-bit, ARM variants, MIPS, …) are published on FTDI’s **D2XX Drivers** page — open the **Linux** row in the table and pick the column that matches your CPU ABI:
+
+- **[D2XX Drivers (FTDI)](https://ftdichip.com/drivers/d2xx-drivers/)**
+
+That page is the canonical source; direct `wp-content/uploads/...` URLs move when FTDI bumps a version. When in doubt, download from the table rather than bookmarking a single `.tgz` forever.
+
+**Not** `libftdi-dev`: Debian/Ubuntu `libftdi-dev` installs the open-source **libFTDI** stack (`ftdi.h`, `-lftdi`). This project links **FTDI’s proprietary D2XX** API (`ftd2xx.h`, `-lftd2xx`). They are different libraries.
+
+#### Linux 1.4.34 (2025-11-11 row) — direct download examples
+
+These links mirror the current **Linux / 1.4.34** cells on the D2XX page (use the page if a link 404s):
+
+| Variant | Typical use | Direct `.tgz` link |
+|--------|----------------|--------------------|
+| x86 (32-bit) | 32-bit Linux userspace (`uname -m` i686, …) | [libftd2xx-linux-x86_32-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-x86_32-1.4.34.tgz) |
+| x64 (64-bit) | PCs and servers (`uname -m` x86_64) | [libftd2xx-linux-x86_64-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-x86_64-1.4.34.tgz) |
+| ARMv7 soft-float | Boards using soft-float ABI | [libftd2xx-linux-arm-v7-sf-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-arm-v7-sf-1.4.34.tgz) |
+| ARMv7 hard-float | Many **Raspberry Pi** systems (check your image) | [libftd2xx-linux-arm-v7-hf-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-arm-v7-hf-1.4.34.tgz) |
+| ARMv7 hard-float uClibc | uClibc-based ARM toolchains | [libftd2xx-linux-arm-v7-hf-uclibc-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-arm-v7-hf-uclibc-1.4.34.tgz) |
+| ARMv6 hard-float | Older Raspberry Pi models (FTDI footnote: check instruction set) | [libftd2xx-linux-arm-v6-hf-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-arm-v6-hf-1.4.34.tgz) |
+| ARMv8 | AArch64 SBCs (`uname -m` aarch64) | [libftd2xx-linux-arm-v8-1.4.34.tgz](https://ftdichip.com/wp-content/uploads/2025/11/libftd2xx-linux-arm-v8-1.4.34.tgz) |
+
+FTDI’s page notes that if you are unsure which **ARM** tarball matches your board, compare `file` / `readelf` on a known-good system binary with `release/build/libftd2xx.txt` inside each tarball, and see their [Linux ReadMe](https://ftdichip.com/Driver/D2XX/Linux/ReadMe.txt), release notes, and install video linked from the same table.
+
+**Important:** A **32-bit** `libftd2xx.so` cannot be linked by a normal **64-bit** `gcc` build (and vice versa). After copying a library, run `file libftd2xx.so` and confirm the ELF class matches your host (for example **ELF 64-bit … x86-64** on `x86_64`).
+
+Extract the archive; the shared object lives under a top-level directory such as `linux-x86_64/`, `linux-x86_32/`, or the ARM-prefixed folder inside the tarball.
+
+### 2. Install `libftd2xx.so` on your system
+
+On Debian-derived systems with multiarch, libraries often live under `/usr/lib/<triplet>/` (for example `/usr/lib/x86_64-linux-gnu/`). `/usr/local/lib` is also fine. The `read_then_write_serial.sh` helper passes **both** `-L/usr/local/lib` and `-L/usr/lib/<triplet>` (when `dpkg-architecture` reports a triplet) so the linker can find the D2XX library in either location.
+
+Manual install example (adjust paths to match what you extracted):
 
 ```bash
-cd linux-x86_64
-sudo cp libftd2xx.so.1.4.33 /usr/local/lib/
-sudo ln -sf /usr/local/lib/libftd2xx.so.1.4.33 /usr/local/lib/libftd2xx.so
+# Example: x86_64 tarball extracted so that ./linux-x86_64/libftd2xx.so exists
+sudo install -m 0755 linux-x86_64/libftd2xx.so /usr/local/lib/libftd2xx.so
 sudo ldconfig
 ```
 
-### 2. EEPROM Write Example Build
+Or install into the multiarch directory (get triplet with `dpkg-architecture -qDEB_HOST_MULTIARCH`):
+
+```bash
+triplet=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+sudo install -m 0755 linux-x86_64/libftd2xx.so "/usr/lib/${triplet}/libftd2xx.so"
+sudo ldconfig
+```
+
+If your tarball only ships a versioned filename (for example `libftd2xx.so.1.4.33`), copy that file under `/usr/local/lib/` or `/usr/lib/<triplet>/` and add a `libftd2xx.so` symlink pointing to it, then run `sudo ldconfig`.
+
+### Optional: automatic libftd2xx download
+
+If the EEPROM **read** or **write** build fails (commonly `cannot find -lftd2xx`), `read_then_write_serial.sh` can **download the matching official `.tgz` from FTDI**, extract it to a temporary directory, install `libftd2xx.so`, run `ldconfig`, and retry the build. This uses `curl` and requires network access.
+
+- **Disable** this behaviour: `sudo FTDI_D2XX_NO_AUTO_DOWNLOAD=1 ./read_then_write_serial.sh NEWSERIAL`
+- **Override** the tarball URL (for example a different ARM ABI): `sudo FTDI_D2XX_URL='https://…/libftd2xx-linux-arm-v7-sf-1.4.34.tgz' ./read_then_write_serial.sh NEWSERIAL`
+
+The script pins a default version (`1.4.34`) and upload path (`2025/11`) to match the current Linux row; when FTDI publishes a newer row, update the constants at the top of `read_then_write_serial.sh` or use `FTDI_D2XX_URL`.
+
+**Trust / ops note:** automatic download installs a **binary** from the network onto your system (as root). That is convenient for lab machines but is a supply-chain decision: use manual installs or `FTDI_D2XX_NO_AUTO_DOWNLOAD=1` when you need stricter control.
+
+### 3. EEPROM Write Example Build
 
 ```bash
 cd linux-x86_64/examples/EEPROM/write
@@ -74,12 +128,18 @@ make
 
 This command creates an executable named `write`.
 
-### 3. Command Line Serial Number Tool Build
+### 4. Command Line Serial Number Tool Build
+
+From the **`linux-x86_64/` directory at the root of this repository** (the modified sources and `ft_eeprom_write_serial.c`):
 
 ```bash
 cd linux-x86_64
 gcc -o ft_eeprom_write_serial ft_eeprom_write_serial.c -lftd2xx -L/usr/local/lib -Wl,-rpath /usr/local/lib
 ```
+
+Add `-L/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)` and a matching `-Wl,-rpath,...` when you install the `.so` under the multiarch directory. The root `read_then_write_serial.sh` already includes those paths when building.
+
+Or use `read_then_write_serial.sh` at the repository root, which builds the read example and this tool before programming.
 
 ## Usage
 
@@ -208,6 +268,13 @@ lrwxrwxrwx 1 root root 7 Dec 10 10:31 /dev/serial-orange -> ttyUSB1
 Now, regardless of which USB port you plug your devices into, `/dev/serial-apple` will always point to the same device.
 
 ## Troubleshooting
+
+### Linker: `cannot find -lftd2xx`
+
+- Install **`libftd2xx.so`** from FTDI’s D2XX Linux package (see [Install `libftd2xx.so` on your system](#2-install-libftd2xxso-on-your-system) and the [download table](#1-where-libftd2xxso-comes-from-official-ftdi-d2xx-for-linux)), then `sudo ldconfig`.
+- Or run `read_then_write_serial.sh` **without** `FTDI_D2XX_NO_AUTO_DOWNLOAD=1` so it can try the **optional FTDI download** path (see [Optional: automatic libftd2xx download](#optional-automatic-libftd2xx-download)).
+- This is **not** satisfied by `apt install libftdi-dev` (different library: libFTDI vs FTDI D2XX).
+- Confirm the `.so` architecture with `file` on the installed path and match it to `uname -m`.
 
 ### FT_Open() Error
 
